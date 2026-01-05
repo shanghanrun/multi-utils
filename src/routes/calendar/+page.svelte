@@ -134,36 +134,34 @@ import solarLunar from 'solarlunar';
     const firstDay = new Date(year, month, 1).getDay();
     const lastDate = new Date(year, month + 1, 0).getDate();
     let calendarDays = [];
-    let mondayCount = 0;
 
-
-    // 1. 에디터 빨간 줄(never 타입) 해결: 명시적으로 타입을 알려줍니다.
     /** @type {Array<{m:number, d:number, name:string}>} */
     const lunarList = anniversaryMap.lunar || [];
 
-    const currentLunarToSolar = lunarList.map(anniv => {
-      try {
-        const y = Number(year);
-        const m = Number(anniv.m);
-        const d = Number(anniv.d);
+    // [수정] 현재 연도 앞뒤 1년씩 총 3개년의 음력을 양력으로 변환
+    // 양력 1월에 나타나는 '전년도 음력 기념일'을 잡기 위함입니다.
+    const currentLunarToSolar = [];
+    const searchYears = [year - 1, year, year + 1];
 
-        // 라이브러리 호출
-        const res = solarLunar.lunar2solar(y, m, d);
-        
-        // [핵심] 속성명이 sMonth/sDay가 아닐 경우를 대비한 자동 추출
-        const sMonth = res.sMonth || res.cMonth || res.month;
-        const sDay = res.sDay || res.cDay || res.day;
+    lunarList.forEach(anniv => {
+      searchYears.forEach(y => {
+        try {
+          const res = solarLunar.lunar2solar(y, anniv.m, anniv.d);
+          const sYear = res.sYear || res.cYear || res.year;
+          const sMonth = res.sMonth || res.cMonth || res.month;
+          const sDay = res.sDay || res.cDay || res.day;
 
-        console.log(`📌 변환시도: 음력 ${m}.${d} -> 양력 ${sMonth}.${sDay}`, res);
-        
-        return {
-          sMonth: Number(sMonth),
-          sDay: Number(sDay),
-          name: anniv.name
-        };
-      } catch (e) {
-        return { sMonth: 0, sDay: 0, name: "" };
-      }
+          // 현재 달력에 보이는 연도/월과 일치하는 데이터만 추출
+          if (Number(sYear) === year && Number(sMonth) === (month + 1)) {
+            currentLunarToSolar.push({
+              sDay: Number(sDay),
+              name: anniv.name,
+              m: anniv.m,
+              d: anniv.d
+            });
+          }
+        } catch (e) { /* 변환 실패 시 무시 */ }
+      });
     });
 
     for (let i = 0; i < firstDay; i++) {
@@ -174,44 +172,29 @@ import solarLunar from 'solarlunar';
       const key = `${year}-${month + 1}-${i}`;
       const dateObj = new Date(year, month, i);
       const dayOfWeek = dateObj.getDay();
-      let isLunarItem = false; // 음력기념일에 (음)표시 위한 것
+      let isLunarItem = false;
       let lunarDateText = "";
 
-      // 월요일 음력 표시
+      // 1. 월요일 음력 표시
       let lunarText = null;
       if (dayOfWeek === 1) {
-        
-          const lInfo = solarLunar.solar2lunar(year, month + 1, i);
-          // 여기서도 속성 확인 후 출력
-          const lm = lInfo.lMonth || lInfo.month;
-          const ld = lInfo.lDay || lInfo.day;
-          lunarText = `(${lm}.${ld})`;
-        
+        const lInfo = solarLunar.solar2lunar(year, month + 1, i);
+        const lm = lInfo.lMonth || lInfo.month;
+        const ld = lInfo.lDay || lInfo.day;
+        lunarText = `(${lm}.${ld})`;
       }
-      // if (dayOfWeek === 1) {
-      //   mondayCount++;
-      //   if (mondayCount === 1 || mondayCount === 3 || mondayCount === 5) {
-      //     const lInfo = solarLunar.solar2lunar(year, month + 1, i);
-      //     // 여기서도 속성 확인 후 출력
-      //     const lm = lInfo.lMonth || lInfo.month;
-      //     const ld = lInfo.lDay || lInfo.day;
-      //     lunarText = `(${lm}.${ld})`;
-      //   }
-      // }
 
-      // 기념일 매칭
+      // 2. 기념일 매칭
       let annivName = anniversaryMap.solar[`${month + 1}-${i}`] || "";
       
-      // 변환된 양력 날짜와 현재 날짜(i)가 일치하는지 확인
-      const matched = currentLunarToSolar.find(a => a.sMonth === (month + 1) && a.sDay === i);
+      // [수정] 확장된 음력 변환 리스트에서 오늘 날짜(i)와 맞는 것 찾기
+      const matched = currentLunarToSolar.find(a => a.sDay === i);
+      
       if (matched) {
         annivName = annivName ? `${annivName}, ${matched.name}` : matched.name;
         isLunarItem = true;
-        // 실제 입력했던 음력 월.일 데이터를 찾아옵니다.
-        const originalLunar = anniversaryMap.lunar.find(l => l.name === matched.name);
-        if (originalLunar) {
-          lunarDateText = `${originalLunar.m}.${originalLunar.d}`;
-        }
+        // matched 객체에 원본 음력 날짜(m, d)를 이미 담아두었으므로 바로 사용
+        lunarDateText = `${matched.m}.${matched.d}`;
       }
 
       calendarDays.push({
@@ -221,8 +204,8 @@ import solarLunar from 'solarlunar';
         lunar: lunarText, 
         hasMemo: !!(calendarState.memos[key] && calendarState.memos[key].trim()),
         anniversary: annivName || null,
-        isLunar: isLunarItem, // 이 날짜에 음력 기념일인지 정보를 담음
-        lunarDate: lunarDateText // 객체에 음력 날짜 추가
+        isLunar: isLunarItem,
+        lunarDate: lunarDateText
       });
     }
     return calendarDays;
@@ -502,10 +485,11 @@ import solarLunar from 'solarlunar';
   .day-header.sun { color: #ff5252; }
 
   .day-cell {
+    min-height: 80px;
     aspect-ratio: 1/1.3; border: 2px solid transparent; background: none;
     display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-    padding: 8px 4px; border-radius: 12px; cursor: pointer; transition: 0.2s;
-    overflow: hidden;
+    padding: 4px; border-radius: 12px; cursor: pointer; transition: 0.2s;
+    overflow: hidden; position:relative
   }
 
   .solar-row { display: flex; align-items: flex-start; justify-content: center; width: 100%; position: relative; }
@@ -518,9 +502,20 @@ import solarLunar from 'solarlunar';
   
   /* 기념일 라벨 줄바꿈 적용 */
   .anniv-label { 
+    padding-top: 8px;
     font-size: 0.7rem; color: #d81b60; font-weight: bold; margin-top: 4px;
     text-align: center; line-height: 1.2; word-break: keep-all; 
+    /* 🌟 핵심: 줄바꿈 설정 */
+    word-break: keep-all;      /* 단어 단위로 줄바꿈 (한글 가독성에 좋음) */
+    overflow-wrap: break-word; /* 너무 긴 단어는 강제로 줄바꿈 */
+    white-space: normal;       /* 기본 한 줄 표시(nowrap) 해제 */
+    
+    text-align: center;        /* 가운데 정렬 */
+    width: 100%;               /* 부모 너비에 맞춤 */
+    max-height: 3.6em;         /* 최대 3줄까지만 허용 (필요시 조정) */
+    /* overflow: hidden;          3줄 넘어가면 가림 */
   }
+  
 
   .solar { font-size: 1.1rem; font-weight: 600; }
   .star { color: #ffd600; font-size: 1.1rem; margin-left: 2px; }
