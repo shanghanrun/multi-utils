@@ -1,6 +1,7 @@
 <script>
 import { auth, calendarState } from '$lib/pb.svelte.js';
 import { onMount } from 'svelte';
+import { invalidateAll } from '$app/navigation';
 
   // 1. 상태 관리 (Runes)
   let isEditing = $state(false);
@@ -26,11 +27,12 @@ import { onMount } from 'svelte';
       calendarState.memos = {};
       calendarState.anniversaryInput = "";
 
-      // 그 다음 서버 데이터를 비동기로 가져옵니다.
-      await loadCalendarData();
-
       // 입력 필드 초기화 (필요시)
       clearInputs(); 
+
+      // 그 다음 서버 데이터를 비동기로 가져옵니다.
+      await loadCalendarData();
+      
 	 
     } catch (e) {
       alert("로그인 실패: " + e.message);
@@ -48,14 +50,17 @@ import { onMount } from 'svelte';
 
       // 가입 성공 후 초기화
       if (auth.isValid) {
-        clearInputs();
+        clearInputs();        
       }
     } else {
       // 로그인 모드 실행
       try {
         await auth.login(email, password);
         // 로그인 성공 후 초기화
-        if (auth.isValid) clearInputs();
+        if (auth.isValid){ 
+          clearInputs();
+          await loadCalendarData()
+        }
       } catch (err) {
         // 계정이 없는 경우 등 에러 발생 시 안내
         alert("계정이 없거나 비밀번호가 틀렸습니다. 가입하지 않으셨다면 '신규 가입'을 먼저 진행해주세요.");
@@ -79,10 +84,12 @@ import { onMount } from 'svelte';
           `user = "${auth.user.id}"`
         );
         if (record) {
+          console.log(record)
           //layout 페이지에서도 사용할 수 있도록 전역 상태로 로드
 		      calendarState.recordId = record.id;
           calendarState.memos = record.memo || {};
           calendarState.anniversaryInput = record.anniversary || "";
+          
         }
       } catch (err) {
         console.log("신규 사용자 이거나 데이터가 없습니다.");
@@ -191,8 +198,8 @@ import { onMount } from 'svelte';
             <input type="text" bind:value={name} placeholder="사용자 이름" />
           {/if}
           
-          <input type="email" bind:value={email} placeholder="이메일 주소" />
-          <input type="password" bind:value={password} placeholder="비밀번호" />
+          <input type="email" bind:value={email}  placeholder="이메일 주소" />
+          <input type="password" bind:value={password} autocomplete="new-password" placeholder="비밀번호" />
           
           <button class="login-btn primary" onclick={handleEmailAuth}>
             {isSignUpMode ? '가입하기' : '로그인'}
@@ -226,7 +233,8 @@ import { onMount } from 'svelte';
         <div class="display-text">{calendarState.memos[dateKey] || "메모가 없습니다."}</div>
       {/if}
     </div>
-    <button class="btn" onclick={() => isEditing = !isEditing}>{isEditing ? "완료" : "수정"}</button>
+  <button class="btn" onclick={() => {
+    isEditing = !isEditing;}}>{isEditing ? "완료" : "수정"}</button>
   </aside>
 
   <main class="calendar-container">

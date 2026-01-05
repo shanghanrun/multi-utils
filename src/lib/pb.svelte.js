@@ -55,6 +55,7 @@ export const auth = {
 			memo: calendarData.memos,
 			anniversary: calendarData.anniversaryInput
 		};
+		console.log(data)
 
 		try {
 			if (calendarData.recordId) {
