@@ -78,25 +78,24 @@ import { decryptData } from '$lib/crypto';
 
   // 데이터 로딩 로직을 별도 함수로 분리 (로그인 직후 재사용 위해)
   async function loadCalendarData() {
-      if (auth.isValid) {      
-
+    if (auth.isValid && auth.user) {
       try {
+        // 명학하게 본인의 user ID와 일치하는 레코드만 필터링
         const record = await auth.client.collection('calendar').getFirstListItem(
           `user = "${auth.user.id}"`
         );
+        
         if (record) {
-           // 복호화 진행
-            const decryptedMemos = decryptData(record.memo, auth.user.id);
-            const decryptedAnniv = decryptData(record.anniversary, auth.user.id);
-
-            calendarState.recordId = record.id;
-            // 복호화가 성공했을 때만 데이터를 할당 (실패 시 빈 객체/문자열)
-            calendarState.memos = decryptedMemos || {};
-            calendarState.anniversaryInput = decryptedAnniv || "";
-          
+          calendarState.recordId = record.id; // 본인의 고유 ID 저장
+          calendarState.memos = decryptData(record.memo, auth.user.id) || {};
+          calendarState.anniversaryInput = decryptData(record.anniversary, auth.user.id) || "";
         }
       } catch (err) {
-        console.log("신규 사용자 이거나 데이터가 없습니다.");
+        // 404 에러(데이터 없음)인 경우 신규 유저로 처리
+        console.log("본인 소유의 데이터가 없습니다. 신규 생성이 필요합니다.");
+        calendarState.recordId = null; // 중요: 남의 ID가 남아있지 않도록 초기화
+        calendarState.memos = {};
+        calendarState.anniversaryInput = "";
       }
     }
   }
