@@ -1,7 +1,7 @@
 <script>
 import { auth, calendarState } from '$lib/pb.svelte.js';
 import { onMount } from 'svelte';
-import { invalidateAll } from '$app/navigation';
+import solarLunar from 'solarlunar';
 
   // 1. 상태 관리 (Runes)
   let isEditing = $state(false);
@@ -101,17 +101,25 @@ import { invalidateAll } from '$app/navigation';
 	 
 
   
-  
-  // 2. 파생 데이터: 기념일 텍스트를 객체 배열로 파싱
+
+  // 2. 파생 데이터: 기념일 파싱 (양력/음력 분리)
   let anniversaryMap = $derived.by(() => {
-    const map = {};
+    const map = { solar: {}, lunar: [] };
     const lines = calendarState.anniversaryInput.split('\n');
+    
     lines.forEach(line => {
       const [datePart, name] = line.split(':');
       if (datePart && name) {
         const [m, d] = datePart.trim().split('.').map(Number);
+        const content = name.trim();
         if (m && d) {
-          map[`${m}-${d}`] = name.trim();
+          if (content.includes('(음력)')) {
+            // 음력 기념일은 별도 리스트로 관리
+            map.lunar.push({ m, d, name: content.replace('(음력)', '').trim() });
+          } else {
+            // 양력 기념일은 빠른 조회를 위해 객체로 관리
+            map.solar[`${m}-${d}`] = content;
+          }
         }
       }
     });
@@ -123,29 +131,98 @@ import { invalidateAll } from '$app/navigation';
   let dateKey = $derived(`${year}-${month + 1}-${selectedDate}`);
 
   let days = $derived.by(() => {
-    const firstDay = new Date(year, month, 1).getDay(); 
+    const firstDay = new Date(year, month, 1).getDay();
     const lastDate = new Date(year, month + 1, 0).getDate();
     let calendarDays = [];
     let mondayCount = 0;
+
+
+    // 1. 에디터 빨간 줄(never 타입) 해결: 명시적으로 타입을 알려줍니다.
+    /** @type {Array<{m:number, d:number, name:string}>} */
+    const lunarList = anniversaryMap.lunar || [];
+
+    const currentLunarToSolar = lunarList.map(anniv => {
+      try {
+        const y = Number(year);
+        const m = Number(anniv.m);
+        const d = Number(anniv.d);
+
+        // 라이브러리 호출
+        const res = solarLunar.lunar2solar(y, m, d);
+        
+        // [핵심] 속성명이 sMonth/sDay가 아닐 경우를 대비한 자동 추출
+        const sMonth = res.sMonth || res.cMonth || res.month;
+        const sDay = res.sDay || res.cDay || res.day;
+
+        console.log(`📌 변환시도: 음력 ${m}.${d} -> 양력 ${sMonth}.${sDay}`, res);
+        
+        return {
+          sMonth: Number(sMonth),
+          sDay: Number(sDay),
+          name: anniv.name
+        };
+      } catch (e) {
+        return { sMonth: 0, sDay: 0, name: "" };
+      }
+    });
 
     for (let i = 0; i < firstDay; i++) {
       calendarDays.push({ day: '', currentMonth: false });
     }
     
     for (let i = 1; i <= lastDate; i++) {
-      const dayOfWeek = new Date(year, month, i).getDay();
-      let showLunar = (dayOfWeek === 1 && (++mondayCount === 1 || mondayCount === 3 || mondayCount === 5));
-
       const key = `${year}-${month + 1}-${i}`;
-      const annivName = anniversaryMap[`${month + 1}-${i}`];
+      const dateObj = new Date(year, month, i);
+      const dayOfWeek = dateObj.getDay();
+      let isLunarItem = false; // 음력기념일에 (음)표시 위한 것
+      let lunarDateText = "";
 
-      calendarDays.push({ 
-        day: i, 
+      // 월요일 음력 표시
+      let lunarText = null;
+      if (dayOfWeek === 1) {
+        
+          const lInfo = solarLunar.solar2lunar(year, month + 1, i);
+          // 여기서도 속성 확인 후 출력
+          const lm = lInfo.lMonth || lInfo.month;
+          const ld = lInfo.lDay || lInfo.day;
+          lunarText = `(${lm}.${ld})`;
+        
+      }
+      // if (dayOfWeek === 1) {
+      //   mondayCount++;
+      //   if (mondayCount === 1 || mondayCount === 3 || mondayCount === 5) {
+      //     const lInfo = solarLunar.solar2lunar(year, month + 1, i);
+      //     // 여기서도 속성 확인 후 출력
+      //     const lm = lInfo.lMonth || lInfo.month;
+      //     const ld = lInfo.lDay || lInfo.day;
+      //     lunarText = `(${lm}.${ld})`;
+      //   }
+      // }
+
+      // 기념일 매칭
+      let annivName = anniversaryMap.solar[`${month + 1}-${i}`] || "";
+      
+      // 변환된 양력 날짜와 현재 날짜(i)가 일치하는지 확인
+      const matched = currentLunarToSolar.find(a => a.sMonth === (month + 1) && a.sDay === i);
+      if (matched) {
+        annivName = annivName ? `${annivName}, ${matched.name}` : matched.name;
+        isLunarItem = true;
+        // 실제 입력했던 음력 월.일 데이터를 찾아옵니다.
+        const originalLunar = anniversaryMap.lunar.find(l => l.name === matched.name);
+        if (originalLunar) {
+          lunarDateText = `${originalLunar.m}.${originalLunar.d}`;
+        }
+      }
+
+      calendarDays.push({
+        day: i,
         currentMonth: true,
         isToday: year === today.getFullYear() && month === today.getMonth() && i === today.getDate(),
-        lunar: showLunar ? `(${month + 1}.${(i % 28) + 1})` : null,
-        hasMemo: calendarState.memos[key] && calendarState.memos[key].trim() !== "",
-        anniversary: annivName // 기념일 이름 저장
+        lunar: lunarText, 
+        hasMemo: !!(calendarState.memos[key] && calendarState.memos[key].trim()),
+        anniversary: annivName || null,
+        isLunar: isLunarItem, // 이 날짜에 음력 기념일인지 정보를 담음
+        lunarDate: lunarDateText // 객체에 음력 날짜 추가
       });
     }
     return calendarDays;
@@ -264,7 +341,13 @@ import { invalidateAll } from '$app/navigation';
           </div>
           
           {#if item.anniversary}
-            <span class="anniv-label">{item.anniversary}</span>
+            <span class="anniv-label">
+              {#if item.isLunar}
+                <small>(음{item.lunarDate})</small> {item.anniversary}
+              {:else}
+                {item.anniversary}
+              {/if}
+            </span>
           {:else if item.lunar}
             <span class="lunar">{item.lunar}</span>
           {/if}
