@@ -1,5 +1,6 @@
 // src/lib/pb.svelte.js
 import PocketBase from 'pocketbase';
+import { encryptData } from '$lib/crypto';
 
 const pb = new PocketBase('https://chois.cloud');
 
@@ -50,10 +51,14 @@ export const auth = {
 		if (hasInvalidFormat) {
 			alert("잘못된 형식의 데이터는 무시되거나 달력에 표시되지 않습니다.");
 		}
+		// 서버에 저장할 데이터를 암호화합니다.
+		const encryptedMemo = encryptData(calendarData.memos, user.id);
+		const encryptedAnniversary = encryptData(calendarData.anniversaryInput, user.id);
+
 		const data = {
 			user: user.id,
-			memo: calendarData.memos,
-			anniversary: calendarData.anniversaryInput
+			memo: encryptedMemo,           // 암호화된 문자열 저장
+			anniversary: encryptedAnniversary // 암호화된 문자열 저장
 		};
 		console.log(data)
 
@@ -64,7 +69,7 @@ export const auth = {
 				const newRecord = await pb.collection('calendar').create(data);
 				calendarData.recordId = newRecord.id;
 			}
-			alert("클라우드에 저장되었습니다.");
+			alert("개인정보가 암호돠되어 안전하게 저장되었습니다.");
 		} catch (err) {
 			console.error("저장 실패:", err);
 			alert("저장 중 오류가 발생했습니다.");

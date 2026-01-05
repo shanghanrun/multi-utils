@@ -2,6 +2,7 @@
 import { auth, calendarState } from '$lib/pb.svelte.js';
 import { onMount } from 'svelte';
 import solarLunar from 'solarlunar';
+import { decryptData } from '$lib/crypto';
 
   // 1. 상태 관리 (Runes)
   let isEditing = $state(false);
@@ -84,11 +85,14 @@ import solarLunar from 'solarlunar';
           `user = "${auth.user.id}"`
         );
         if (record) {
-          console.log(record)
-          //layout 페이지에서도 사용할 수 있도록 전역 상태로 로드
-		      calendarState.recordId = record.id;
-          calendarState.memos = record.memo || {};
-          calendarState.anniversaryInput = record.anniversary || "";
+           // 복호화 진행
+            const decryptedMemos = decryptData(record.memo, auth.user.id);
+            const decryptedAnniv = decryptData(record.anniversary, auth.user.id);
+
+            calendarState.recordId = record.id;
+            // 복호화가 성공했을 때만 데이터를 할당 (실패 시 빈 객체/문자열)
+            calendarState.memos = decryptedMemos || {};
+            calendarState.anniversaryInput = decryptedAnniv || "";
           
         }
       } catch (err) {
